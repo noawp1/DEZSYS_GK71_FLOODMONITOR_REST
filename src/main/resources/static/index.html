@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flood Monitor – Hochwasser-Frühwarnsystem</title>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --normal: #16a34a;
+      --warning: #f59e0b;
+      --critical: #dc2626;
+      --unknown: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+    .container { max-width: 1280px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--border);
+    }
+    header h1 { font-size: 24px; color: var(--primary-dark); display: flex; align-items: center; gap: 8px; }
+    header .header-links a { color: var(--primary); text-decoration: none; font-weight: 500; margin-left: 16px; }
+    header .header-links a:hover { text-decoration: underline; }
+
+    /* Control Panel */
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+    .form-control {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      background: white;
+    }
+    .form-control:focus { outline: 2px solid var(--primary); border-color: transparent; }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { background: #e2e8f0; color: var(--text); }
+    .btn-secondary:hover { background: #cbd5e1; }
+
+    .btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+    .btn-group button {
+      padding: 8px 14px;
+      border: none;
+      background: white;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .btn-group button.active { background: var(--primary); color: white; }
+
+    /* Alerts section */
+    .alerts-container { margin-bottom: 20px; }
+    .alert-card {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 500;
+    }
+    .alert-card.CRITICAL { background: #fee2e2; border-left: 5px solid var(--critical); color: #991b1b; }
+    .alert-card.WARNING { background: #fef3c7; border-left: 5px solid var(--warning); color: #92400e; }
+
+    /* Cards Grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .metric-title { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    .metric-value { font-size: 26px; font-weight: bold; margin-top: 4px; color: var(--primary-dark); }
+    .metric-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: white;
+    }
+    .badge.NORMAL { background-color: var(--normal); }
+    .badge.WARNING { background-color: var(--warning); }
+    .badge.CRITICAL { background-color: var(--critical); }
+    .badge.UNKNOWN { background-color: var(--unknown); }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-ONLINE { background: #dcfce7; color: #166534; }
+    .status-MAINTENANCE { background: #fef9c3; color: #854d0e; }
+    .status-OFFLINE { background: #f1f5f9; color: #475569; }
+
+    /* Table */
+    .table-responsive {
+      overflow-x: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+    th {
+      background: #f1f5f9;
+      padding: 12px 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 2px solid var(--border);
+    }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    tr:hover { background-color: #f8fafc; }
+
+    /* Loading & Error */
+    #loadingIndicator {
+      display: none;
+      padding: 10px;
+      text-align: center;
+      color: var(--primary);
+      font-weight: 600;
+    }
+    #errorMessage {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>🌊 Hochwasser-Frühwarnsystem (Flood Monitor)</h1>
+      <p style="font-size: 13px; color: var(--text-muted);">Echtzeit-Pegelmessungen, historische Daten & Alarmierung</p>
+    </div>
+    <div class="header-links">
+      <a href="/swagger-ui.html" target="_blank">📖 Swagger UI (OpenAPI)</a>
+    </div>
+  </header>
+
+  <div id="errorMessage"></div>
+
+  <!-- Filter & Steuerungsleiste -->
+  <div class="panel">
+    <div class="controls-grid">
+      <div class="form-group">
+        <label for="stationSelect">Messstation</label>
+        <select id="stationSelect" class="form-control"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="filterWarningLevel">Warnstufe</label>
+        <select id="filterWarningLevel" class="form-control">
+          <option value="">Alle Warnstufen</option>
+          <option value="NORMAL">NORMAL (Grün)</option>
+          <option value="WARNING">WARNING (Orange)</option>
+          <option value="CRITICAL">CRITICAL (Rot)</option>
+          <option value="UNKNOWN">UNKNOWN (Grau)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="filterFrom">Von (ISO-8601)</label>
+        <input type="datetime-local" id="filterFrom" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label for="filterTo">Bis (ISO-8601)</label>
+        <input type="datetime-local" id="filterTo" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label for="filterLimit">Limit</label>
+        <input type="number" id="filterLimit" class="form-control" value="50" min="1" max="1000">
+      </div>
+
+      <div class="form-group">
+        <label>Format (Content Negotiation)</label>
+        <div class="btn-group">
+          <button type="button" class="btn-format active" data-format="json">JSON</button>
+          <button type="button" class="btn-format" data-format="xml">XML</button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <button id="btnApplyFilter" class="btn btn-primary" style="flex: 1;">Filter anwenden</button>
+        <button id="btnResetFilter" class="btn btn-secondary">Reset</button>
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+      <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <input type="checkbox" id="autoRefreshToggle" checked> Auto-Refresh alle 5 Sekunden
+      </label>
+      <span id="formatStatus" style="color: var(--text-muted); font-size: 12px;">Aktives Format: <strong>application/json</strong></span>
+    </div>
+  </div>
+
+  <div id="loadingIndicator">⏳ Daten werden geladen...</div>
+
+  <!-- Aktuelle Alarme -->
+  <div class="alerts-container" id="alertsBox" style="display: none;"></div>
+
+  <!-- Quick Metrics für die ausgewählte Station -->
+  <div class="cards-grid" id="metricsGrid">
+    <div class="metric-card">
+      <div class="metric-title">Aktueller Wasserstand</div>
+      <div class="metric-value" id="curWaterLevel">-- cm</div>
+      <div class="metric-sub" id="curWarningLevelBadge">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Durchflussmenge</div>
+      <div class="metric-value" id="curFlowRate">-- m³/s</div>
+      <div class="metric-sub">Strömungsvolumen</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Niederschlag (1h)</div>
+      <div class="metric-value" id="curRainfall">-- mm/h</div>
+      <div class="metric-sub" id="curTemp">Temperatur: -- °C</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Stationsstatus & Akku</div>
+      <div class="metric-value" id="curBattery">-- %</div>
+      <div class="metric-sub" id="curStatusBadge">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Statistik (Station)</div>
+      <div class="metric-value" style="font-size: 18px;" id="statAvgWater">Ø Wasser: -- cm</div>
+      <div class="metric-sub" id="statMinMax">Min: -- / Max: -- cm</div>
+    </div>
+  </div>
+
+  <!-- Messwerttabelle -->
+  <div class="panel" style="padding: 0; overflow: hidden;">
+    <div style="padding: 12px 16px; font-weight: 600; background: #f8fafc; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;">
+      <span>Historische Messwerte</span>
+      <span id="recordCount" style="font-size: 12px; color: var(--text-muted);">0 Einträge</span>
+    </div>
+    <div class="table-responsive">
+      <table>
+        <thead>
+        <tr>
+          <th>Station</th>
+          <th>Zeitpunkt (ISO-8601)</th>
+          <th>Wasserstand</th>
+          <th>Durchfluss</th>
+          <th>Niederschlag</th>
+          <th>Temperatur</th>
+          <th>Akkustand</th>
+          <th>Status</th>
+          <th>Warnstufe</th>
+        </tr>
+        </thead>
+        <tbody id="measurementsTableBody">
+        <tr>
+          <td colspan="9" style="text-align: center; color: var(--text-muted);">Keine Messdaten verfügbar.</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentFormat = 'json'; // 'json' oder 'xml'
+  let refreshTimer = null;
+  let stationsCache = [];
+
+  $(document).ready(function() {
+    loadStations();
+    loadAlerts();
+
+    // Format Umschaltung (JSON / XML)
+    $('.btn-format').on('click', function() {
+      $('.btn-format').removeClass('active');
+      $(this).addClass('active');
+      currentFormat = $(this).data('format');
+      const acceptHeader = currentFormat === 'xml' ? 'application/xml' : 'application/json';
+      $('#formatStatus').html('Aktives Format: <strong>' + acceptHeader + '</strong>');
+      refreshAll();
+    });
+
+    // Filter Aktionen
+    $('#btnApplyFilter').on('click', function() {
+      loadMeasurements();
+    });
+
+    $('#btnResetFilter').on('click', function() {
+      $('#filterWarningLevel').val('');
+      $('#filterFrom').val('');
+      $('#filterTo').val('');
+      $('#filterLimit').val(50);
+      loadMeasurements();
+    });
+
+    $('#stationSelect').on('change', function() {
+      refreshAll();
+    });
+
+    // Auto-Refresh
+    $('#autoRefreshToggle').on('change', function() {
+      toggleAutoRefresh($(this).is(':checked'));
+    });
+    toggleAutoRefresh(true);
+  });
+
+  function toggleAutoRefresh(enable) {
+    if (refreshTimer) clearInterval(refreshTimer);
+    if (enable) {
+      refreshTimer = setInterval(function() {
+        refreshAll();
+      }, 5000);
+    }
+  }
+
+  function refreshAll() {
+    loadAlerts();
+    loadLatestMeasurement();
+    loadStatistics();
+    loadMeasurements();
+  }
+
+  function getAcceptHeader() {
+    return currentFormat === 'xml' ? 'application/xml' : 'application/json';
+  }
+
+  function showLoading(show) {
+    if (show) $('#loadingIndicator').show();
+    else $('#loadingIndicator').hide();
+  }
+
+  function showError(msg) {
+    if (!msg) {
+      $('#errorMessage').hide();
+    } else {
+      $('#errorMessage').text(msg).show();
+    }
+  }
+
+  // 1. Stationen laden
+  function loadStations() {
+    $.ajax({
+      url: '/api/v1/stations',
+      type: 'GET',
+      headers: { 'Accept': getAcceptHeader() },
+      dataType: currentFormat,
+      success: function(data) {
+        showError(null);
+        let list = [];
+        if (currentFormat === 'xml') {
+          $(data).find('station, item').each(function() {
+            list.push({
+              id: $(this).find('id').text(),
+              name: $(this).find('name').text(),
+              river: $(this).find('river').text()
+            });
+          });
+        } else {
+          list = data;
+        }
+
+        stationsCache = list;
+        const $select = $('#stationSelect');
+        const selectedVal = $select.val();
+        $select.empty();
+
+        list.forEach(function(s) {
+          $select.append($('<option>', {
+            value: s.id,
+            text: s.name + ' (' + s.river + ')'
+          }));
+        });
+
+        if (selectedVal) $select.val(selectedVal);
+        refreshAll();
+      },
+      error: function(xhr) {
+        handleAjaxError(xhr);
+      }
+    });
+  }
+
+  // 2. Aktueller Messwert
+  function loadLatestMeasurement() {
+    const stationId = $('#stationSelect').val();
+    if (!stationId) return;
+
+    $.ajax({
+      url: '/api/v1/stations/' + stationId + '/measurements/latest',
+      type: 'GET',
+      headers: { 'Accept': getAcceptHeader() },
+      dataType: currentFormat,
+      success: function(data) {
+        let m = {};
+        if (currentFormat === 'xml') {
+          const $xml = $(data);
+          m = {
+            stationId: $xml.find('stationId').text(),
+            waterLevel: parseFloat($xml.find('waterLevel').text()),
+            flowRate: parseFloat($xml.find('flowRate').text()),
+            rainfall: parseFloat($xml.find('rainfall').text()),
+            temperature: parseFloat($xml.find('temperature').text()),
+            batteryLevel: parseInt($xml.find('batteryLevel').text()),
+            status: $xml.find('status').text(),
+            warningLevel: $xml.find('warningLevel').text()
+          };
+        } else {
+          m = data;
+        }
+
+        $('#curWaterLevel').text(m.waterLevel + ' cm');
+        $('#curWarningLevelBadge').html('<span class="badge ' + m.warningLevel + '">' + m.warningLevel + '</span>');
+        $('#curFlowRate').text(m.flowRate + ' m³/s');
+        $('#curRainfall').text(m.rainfall + ' mm/h');
+        $('#curTemp').text('Temperatur: ' + m.temperature + ' °C');
+        $('#curBattery').text(m.batteryLevel + ' %');
+        $('#curStatusBadge').html('<span class="status-badge status-' + m.status + '">' + m.status + '</span>');
+      },
+      error: function(xhr) {
+        // Nicht blockieren wenn noch keine Messung vorhanden
+      }
+    });
+  }
+
+  // 3. Statistiken laden
+  function loadStatistics() {
+    const stationId = $('#stationSelect').val();
+    if (!stationId) return;
+
+    $.ajax({
+      url: '/api/v1/stations/' + stationId + '/statistics',
+      type: 'GET',
+      headers: { 'Accept': getAcceptHeader() },
+      dataType: currentFormat,
+      success: function(data) {
+        let s = {};
+        if (currentFormat === 'xml') {
+          const $xml = $(data);
+          s = {
+            avgWaterLevel: parseFloat($xml.find('avgWaterLevel').text()),
+            minWaterLevel: parseFloat($xml.find('minWaterLevel').text()),
+            maxWaterLevel: parseFloat($xml.find('maxWaterLevel').text())
+          };
+        } else {
+          s = data;
+        }
+        $('#statAvgWater').text('Ø Wasser: ' + s.avgWaterLevel + ' cm');
+        $('#statMinMax').text('Min: ' + s.minWaterLevel + ' / Max: ' + s.maxWaterLevel + ' cm');
+      }
+    });
+  }
+
+  // 4. Historische Messwerte laden
+  function loadMeasurements() {
+    const stationId = $('#stationSelect').val();
+    if (!stationId) return;
+
+    showLoading(true);
+
+    let params = {};
+    const fromVal = $('#filterFrom').val();
+    const toVal = $('#filterTo').val();
+    const warningVal = $('#filterWarningLevel').val();
+    const limitVal = $('#filterLimit').val();
+
+    if (fromVal) params.from = new Date(fromVal).toISOString();
+    if (toVal) params.to = new Date(toVal).toISOString();
+    if (warningVal) params.warningLevel = warningVal;
+    if (limitVal) params.limit = limitVal;
+
+    $.ajax({
+      url: '/api/v1/stations/' + stationId + '/measurements',
+      type: 'GET',
+      headers: { 'Accept': getAcceptHeader() },
+      dataType: currentFormat,
+      data: params,
+      success: function(data) {
+        showLoading(false);
+        showError(null);
+
+        let list = [];
+        if (currentFormat === 'xml') {
+          $(data).find('measurement, item').each(function() {
+            const $m = $(this);
+            list.push({
+              stationId: $m.find('stationId').text(),
+              timestamp: $m.find('timestamp').text(),
+              waterLevel: parseFloat($m.find('waterLevel').text()),
+              flowRate: parseFloat($m.find('flowRate').text()),
+              rainfall: parseFloat($m.find('rainfall').text()),
+              temperature: parseFloat($m.find('temperature').text()),
+              batteryLevel: parseInt($m.find('batteryLevel').text()),
+              status: $m.find('status').text(),
+              warningLevel: $m.find('warningLevel').text()
+            });
+          });
+        } else {
+          list = data;
+        }
+
+        renderTable(list);
+      },
+      error: function(xhr) {
+        showLoading(false);
+        handleAjaxError(xhr);
+      }
+    });
+  }
+
+  function renderTable(measurements) {
+    const $tbody = $('#measurementsTableBody');
+    $tbody.empty();
+    $('#recordCount').text(measurements.length + ' Einträge');
+
+    if (measurements.length === 0) {
+      $tbody.append('<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Keine Messdaten für die ausgewählten Filterkriterien.</td></tr>');
+      return;
+    }
+
+    measurements.forEach(function(m) {
+      const row = '<tr>' +
+              '<td><strong>' + escapeHtml(m.stationId) + '</strong></td>' +
+              '<td>' + formatIsoTime(m.timestamp) + '</td>' +
+              '<td><strong>' + m.waterLevel + ' cm</strong></td>' +
+              '<td>' + m.flowRate + ' m³/s</td>' +
+              '<td>' + m.rainfall + ' mm/h</td>' +
+              '<td>' + m.temperature + ' °C</td>' +
+              '<td>' + m.batteryLevel + ' %</td>' +
+              '<td><span class="status-badge status-' + m.status + '">' + m.status + '</span></td>' +
+              '<td><span class="badge ' + m.warningLevel + '">' + m.warningLevel + '</span></td>' +
+              '</tr>';
+      $tbody.append(row);
+    });
+  }
+
+  // 5. Alarme laden
+  function loadAlerts() {
+    $.ajax({
+      url: '/api/v1/alerts',
+      type: 'GET',
+      headers: { 'Accept': getAcceptHeader() },
+      dataType: currentFormat,
+      success: function(data) {
+        let alerts = [];
+        if (currentFormat === 'xml') {
+          $(data).find('alert, item').each(function() {
+            const $a = $(this);
+            alerts.push({
+              stationName: $a.find('stationName').text(),
+              river: $a.find('river').text(),
+              warningLevel: $a.find('warningLevel').text(),
+              waterLevel: $a.find('waterLevel').text(),
+              message: $a.find('message').text()
+            });
+          });
+        } else {
+          alerts = data;
+        }
+
+        const $box = $('#alertsBox');
+        $box.empty();
+        if (alerts && alerts.length > 0) {
+          $box.show();
+          alerts.forEach(function(a) {
+            $box.append(
+                    '<div class="alert-card ' + a.warningLevel + '">' +
+                    '<div><strong>⚠️ Hochwasserwarnung: ' + escapeHtml(a.stationName) + ' (' + escapeHtml(a.river) + ')</strong> – ' + escapeHtml(a.message) + '</div>' +
+                    '<span class="badge ' + a.warningLevel + '">' + a.warningLevel + '</span>' +
+                    '</div>'
+            );
+          });
+        } else {
+          $box.hide();
+        }
+      }
+    });
+  }
+
+  function handleAjaxError(xhr) {
+    let msg = 'Fehler ' + xhr.status + ': ' + xhr.statusText;
+    try {
+      if (xhr.responseJSON && xhr.responseJSON.message) {
+        msg = 'Fehler ' + xhr.responseJSON.status + ' (' + xhr.responseJSON.error + '): ' + xhr.responseJSON.message;
+      } else if (xhr.responseXML) {
+        const xmlMsg = $(xhr.responseXML).find('message').text();
+        if (xmlMsg) msg = 'Fehler: ' + xmlMsg;
+      }
+    } catch (e) {}
+    showError(msg);
+  }
+
+  function formatIsoTime(iso) {
+    if (!iso) return '--';
+    return iso.replace('T', ' ').replace('Z', ' UTC');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return $('<div>').text(str).html();
+  }
+</script>
+</body>
+</html>
+
